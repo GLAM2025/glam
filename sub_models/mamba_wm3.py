@@ -346,32 +346,6 @@ class WorldModel(nn.Module):
             self.action_buffer = torch.zeros(action_size, dtype=dtype, device=self.device)
             self.reward_hat_buffer = torch.zeros(scalar_size, dtype=dtype, device=self.device)
             self.termination_hat_buffer = torch.zeros(scalar_size, dtype=dtype, device=self.device)
-
-    def mamba_imagine_data(self, agent: agents.ActorCriticAgent, sample_obs, sample_action, sample_reward, sample_termination,
-                           imagine_batch_size, imagine_batch_length, imagine_context_length, log_video, logger):
-        '''
-        第一步, 使用单一步骤推理, 就是原版本
-        第二步, 使用使用多步骤推理单一步骤, 使用想象步骤训练, 原版本简单修改
-        第三步, 把context和imagine的数据结构统一拿来训练
-        imagine的动作用agent的actor采样
-
-        第四步, 对于context的处理, 参考double-DQN的处理方式, 因为context的动作是以前的动作
-        '''
-        self.init_imagine_buffer(imagine_batch_size, imagine_batch_length + imagine_context_length, dtype=self.tensor_dtype)
-        obs_hat_list = []   # TODO：保存图像
-
-        context_latent = self.encode_obs(sample_obs)
-        last_obs_hat, last_reward_hat, last_termination_hat, last_latent, last_dist_feat = self.predict_next(
-            context_latent, sample_action
-        )
-        self.latent_buffer[:, 0:imagine_context_length] = last_latent
-        self.hidden_buffer[:, 0:imagine_context_length] = last_dist_feat
-        self.reward_hat_buffer[:, 0:imagine_context_length] = sample_reward
-        self.action_buffer[:, 0:imagine_context_length] = sample_action
-        self.termination_hat_buffer[:, 0:imagine_context_length] = sample_termination
-
-        for i in range(1, imagine_batch_length+1):
-            dist_feat = self.storm_mamba(self.latent_buffer[:, 0:imagine_context_length], sample_action, log_video=log_video)
             
 
     def imagine_data(self, agent: agents.ActorCriticAgent, sample_obs, sample_action,
@@ -403,7 +377,7 @@ class WorldModel(nn.Module):
             self.latent_buffer[:, i+1:i+2] = last_latent[:, -1:]
             self.hidden_buffer[:, i+1:i+2] = last_dist_feat[:, -1:]
             self.reward_hat_buffer[:, i:i+1] = last_reward_hat[:, -1:]
-            self.termination_hat_buffer[:, i:i+1] = last_termination_hat[:, -1:]
+
             if log_video:
                 obs_hat_list.append(last_obs_hat[::imagine_batch_size//16])  # uniform sample vec_env
 
@@ -414,7 +388,6 @@ class WorldModel(nn.Module):
 
     def update(self, obs, action, reward, termination, logger=None):
         self.train()
-        batch_size, batch_length = obs.shape[:2]
 
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
             # encoding
@@ -427,21 +400,19 @@ class WorldModel(nn.Module):
             obs_hat = self.image_decoder(flattened_sample)
 
             # transformer
-            temporal_mask = get_subsequent_mask_with_batch_length(batch_length, flattened_sample.device)
             dist_feat = self.storm_mamba(flattened_sample, action)
             prior_logits = self.dist_head.forward_prior(dist_feat)
             # decoding reward and termination with dist_feat
             reward_hat = self.reward_decoder(dist_feat)
-            termination_hat = self.termination_decoder(dist_feat)
 
             # env loss
             reconstruction_loss = self.mse_loss_func(obs_hat, obs)
             reward_loss = self.symlog_twohot_loss_func(reward_hat, reward)
-            termination_loss = self.bce_with_logits_loss_func(termination_hat, termination)
+
             # dyn-rep loss
             dynamics_loss, dynamics_real_kl_div = self.categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
             representation_loss, representation_real_kl_div = self.categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
-            total_loss = reconstruction_loss + reward_loss + termination_loss + 0.5*dynamics_loss + 0.1*representation_loss  # 原比例
+            total_loss = reconstruction_loss + reward_loss + 0.5*dynamics_loss + 0.1*representation_loss  # 原比例
 
         # gradient descent
         self.scaler.scale(total_loss).backward()
@@ -454,7 +425,7 @@ class WorldModel(nn.Module):
         if logger is not None:
             logger.log("WorldModel/reconstruction_loss", reconstruction_loss.item())
             logger.log("WorldModel/reward_loss", reward_loss.item())
-            logger.log("WorldModel/termination_loss", termination_loss.item())
+            # logger.log("WorldModel/termination_loss", termination_loss.item())
             logger.log("WorldModel/dynamics_loss", dynamics_loss.item())
             logger.log("WorldModel/dynamics_real_kl_div", dynamics_real_kl_div.item())
             logger.log("WorldModel/representation_loss", representation_loss.item())
