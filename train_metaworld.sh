@@ -11,7 +11,7 @@ do
     for seed in "${seeds[@]}";
     do
         base_model=Mamba
-        model_version=1_1
+        model_version=1_2
         cuda_device=0
         sample=normal
         suite=metaworld
@@ -44,4 +44,6 @@ do
         done
     done
 done
+
+
 
