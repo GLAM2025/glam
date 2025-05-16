@@ -36,7 +36,7 @@ class Block(nn.Module):
         super().__init__()
         self.residual_in_fp32 = residual_in_fp32
         self.fused_add_norm = fused_add_norm
-        self.mixer = mixer_cls(dim, d_state=32)
+        self.mixer = mixer_cls(dim, d_state=64)
         self.norm = norm_cls(dim)
         if self.fused_add_norm:
             assert RMSNorm is not None, "RMSNorm import fails"
