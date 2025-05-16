@@ -111,6 +111,7 @@ class ActorCriticAgent(nn.Module):
     def policy(self, x):
         x = self.actor(x)
         mean, std = torch.split(x, [self._size] * 2, -1)
+        mean = torch.tanh(mean)
         return mean, std 
 
     def value(self, x):
@@ -134,7 +135,7 @@ class ActorCriticAgent(nn.Module):
         self.eval()
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
             mean, std  = self.policy(latent)
-            mean = torch.tanh(mean)
+            
             if greedy:
                 action = mean
             else:
@@ -196,7 +197,8 @@ class ActorCriticAgent(nn.Module):
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
             logits, raw_value = self.get_logits_raw_value(latent)
             mean, std = torch.split(logits, [self._size] * 2, -1)
-            std = F.softplus(std) + 0.001
+            mean = torch.tanh(mean)
+            std = F.softplus(std) + 0.0001
             dist = torchd.normal.Normal(mean[:, :-1], std[:, :-1])
             # dist = distributions.Categorical(logits=logits[:, :-1])
             log_prob = dist.log_prob(action)
