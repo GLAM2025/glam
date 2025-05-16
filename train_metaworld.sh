@@ -1,6 +1,6 @@
 ## 0 6 9 20  24 23 25
 
-seeds=(6)
+seeds=(1)
 game_list=(
     'door-close'
     )
@@ -11,7 +11,7 @@ do
     for seed in "${seeds[@]}";
     do
         base_model=Mamba
-        model_version=1_2_1
+        model_version=1_2
         cuda_device=0
         sample=normal
         suite=metaworld
