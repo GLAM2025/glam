@@ -14,7 +14,11 @@ import agents
 
 
 class EncoderBN(nn.Module):
-    def __init__(self, in_channels, stem_channels, final_feature_width) -> None:
+    def __init__(self, img_width=128, in_channels=3, stem_channels=32, 
+                final_feature_width=5, 
+                kernel_size=6,
+                stride=3,
+                padding=2) -> None:
         super().__init__()
 
         backbone = []
@@ -23,13 +27,13 @@ class EncoderBN(nn.Module):
             nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=stem_channels,
-                kernel_size=4,
-                stride=2,
-                padding=1,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
                 bias=False
             )
         )
-        feature_width = 64//2
+        feature_width = (img_width - kernel_size + 2*padding) // stride + 1
         channels = stem_channels
         backbone.append(nn.BatchNorm2d(stem_channels))
         backbone.append(nn.ReLU(inplace=True))
@@ -41,14 +45,14 @@ class EncoderBN(nn.Module):
                 nn.Conv2d(
                     in_channels=channels,
                     out_channels=channels*2,
-                    kernel_size=4,
-                    stride=2,
-                    padding=1,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
                     bias=False
                 )
             )
             channels *= 2
-            feature_width //= 2
+            feature_width = (feature_width - kernel_size + 2*padding) // stride + 1
             backbone.append(nn.BatchNorm2d(channels))
             backbone.append(nn.ReLU(inplace=True))
             # backbone.append(nn.SiLU(inplace=True))
@@ -68,7 +72,11 @@ class EncoderBN(nn.Module):
 
 
 class DecoderBN(nn.Module):
-    def __init__(self, stoch_dim, last_channels, original_in_channels, stem_channels, final_feature_width) -> None:
+    def __init__(self, stoch_dim, last_channels, original_in_channels, stem_channels, 
+                final_feature_width=5, 
+                kernel_size=6,
+                stride=3,
+                padding=2) -> None:
         super().__init__()
 
         backbone = []
@@ -89,14 +97,14 @@ class DecoderBN(nn.Module):
                 nn.ConvTranspose2d(
                     in_channels=channels,
                     out_channels=channels//2,
-                    kernel_size=4,
-                    stride=2,
-                    padding=1,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
                     bias=False
                 )
             )
             channels //= 2
-            feat_width *= 2
+            feat_width = (feat_width - 1) * stride + kernel_size - 2*padding
             backbone.append(nn.BatchNorm2d(channels))
             backbone.append(nn.ReLU(inplace=True))
 
@@ -104,11 +112,12 @@ class DecoderBN(nn.Module):
             nn.ConvTranspose2d(
                 in_channels=channels,
                 out_channels=original_in_channels,
-                kernel_size=4,
-                stride=2,
-                padding=1
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding
             )
         )
+        feat_width = (feat_width - 1) * stride + kernel_size - 2*padding
         self.backbone = nn.Sequential(*backbone)
 
     def forward(self, sample):
@@ -217,12 +226,16 @@ class CategoricalKLDivLossWithFreeBits(nn.Module):
 
 
 class WorldModel(nn.Module):
-    def __init__(self, in_channels, action_dim,
+    def __init__(self, img_width, in_channels, action_dim,
                  transformer_max_length, transformer_hidden_dim, transformer_num_layers, device) -> None:
         super().__init__()
         self.transformer_hidden_dim = transformer_hidden_dim
         self.final_feature_width = 4
+        self.kernel_size=4
+        self.stride=2
+        self.padding=1
         self.stoch_dim = 32
+
         self.stoch_flattened_dim = self.stoch_dim*self.stoch_dim
         self.use_amp = True
         self.tensor_dtype = torch.bfloat16 if self.use_amp else torch.float32
@@ -232,9 +245,11 @@ class WorldModel(nn.Module):
         self.action_dim = action_dim
 
         self.encoder = EncoderBN(
+            img_width=img_width,
             in_channels=in_channels,
             stem_channels=32,
-            final_feature_width=self.final_feature_width
+            final_feature_width=self.final_feature_width,
+            kernel_size=self.kernel_size, stride=self.stride, padding=self.padding
         )
         self.storm_mamba = StochasticMamba(
             stoch_dim=self.stoch_flattened_dim,
@@ -254,7 +269,8 @@ class WorldModel(nn.Module):
             last_channels=self.encoder.last_channels,
             original_in_channels=in_channels,
             stem_channels=32,
-            final_feature_width=self.final_feature_width
+            final_feature_width=self.final_feature_width,
+            kernel_size=self.kernel_size, stride=self.stride, padding=self.padding
         )
         self.reward_decoder = RewardDecoder(
             num_classes=255,

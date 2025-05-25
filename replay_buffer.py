@@ -18,7 +18,7 @@ class ReplayBuffer():
             self.termination_buffer = torch.empty((max_length//num_envs, num_envs), dtype=torch.float32, device=self.device, requires_grad=False)
         else:
             self.obs_buffer = np.empty((max_length//num_envs, num_envs, *obs_shape), dtype=np.uint8)
-            self.action_buffer = np.empty((max_length//num_envs, num_envs,action_dim), dtype=np.float32)
+            self.action_buffer = np.empty((max_length//num_envs, num_envs, action_dim), dtype=np.float32)
             self.reward_buffer = np.empty((max_length//num_envs, num_envs), dtype=np.float32)
             self.termination_buffer = np.empty((max_length//num_envs, num_envs), dtype=np.float32)
 

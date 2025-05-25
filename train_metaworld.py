@@ -170,14 +170,15 @@ def joint_train_world_model_agent(suite, env_name, max_steps,
 
         done_flag = np.logical_or(done, truncated)
         if done_flag.any():
+            sum_reward += reward
             for i in range(num_envs):
                 if done_flag:
                     logger.log(f"sample/{env_name}_reward", sum_reward)
                     logger.log("replay_buffer/length", len(replay_buffer))
                     current_obs = vec_env.reset()
-                    sum_reward = 0
+                    sum_reward = np.zeros(num_envs)
                     
-                    if total_steps > 60000:
+                    if total_steps > 90000:
                         print(colorama.Fore.GREEN + f"Episode end!!! Saving model at total steps {total_steps}" + colorama.Style.RESET_ALL)
                         torch.save(world_model.state_dict(), ckpt_path+f"/world_model_{total_steps}.pth")
                         torch.save(agent.state_dict(), ckpt_path+f"/agent_{total_steps}.pth")     
@@ -240,10 +241,11 @@ def joint_train_world_model_agent(suite, env_name, max_steps,
             torch.save(agent.state_dict(), ckpt_path+f"/agent_{total_steps}.pth")
 
 
-def build_world_model(conf, args,action_dim, device):
+def build_world_model(conf, env_conf, args,action_dim, device):
     if args.base_model == "Mamba":
         from sub_models.mamba_wm3 import WorldModel # 372
         return WorldModel(
+            img_width = env_conf.image_size[0],
             in_channels=conf.Models.WorldModel.InChannels,
             action_dim=action_dim,
             transformer_max_length=conf.Models.WorldModel.TransformerMaxLength,
@@ -289,12 +291,12 @@ def build_agent(conf, action_dim, device):
         device = device
     ).cuda(device)
 
-def build_replay_buffer(conf, action_dim):
+def build_replay_buffer(conf, env_conf, action_dim):
     if args.sample == 'normal':
         print('args.sample == normal')
         from replay_buffer import ReplayBuffer
         replay_buffer = ReplayBuffer(
-            obs_shape=(conf.BasicSettings.ImageSize, conf.BasicSettings.ImageSize, 3),
+            obs_shape=(*tuple(env_conf.image_size), 3),
             action_dim=action_dim,
             num_envs=conf.JointTrainAgent.NumEnvs,
             max_length=conf.JointTrainAgent.BufferMaxLength,
@@ -381,10 +383,10 @@ if __name__ == "__main__":
     # distinguish between tasks, other debugging options are removed for simplicity
     if conf.Task == "JointTrainAgent":
         # getting action_dim with dummy env
-        dummy_env,_, action_dim = make_env(args.suite ,args.env_name, seed=0)
+        dummy_env, env_conf, action_dim = make_env(args.suite ,args.env_name, seed=0)
 
         # build world model and agent
-        world_model = build_world_model(conf, args, action_dim, device)
+        world_model = build_world_model(conf, env_conf, args, action_dim, device)
         agent = build_agent(conf, action_dim, device)
 
         # DEBUG
@@ -396,7 +398,7 @@ if __name__ == "__main__":
         t.model_structure(agent)
 
         # build replay buffer
-        replay_buffer =  build_replay_buffer(conf, action_dim)
+        replay_buffer =  build_replay_buffer(conf, env_conf, action_dim)
 
         # create ckpt dir
         ckpt_path = f"data/ckpt/{args.env_name}_seed{args.seed}_{args.base_model}_{args.version}"

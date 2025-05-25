@@ -17,6 +17,9 @@ import shutil
 import pickle
 import os
 
+import yaml
+
+import train_metaworld 
 from utils import seed_np_torch, Logger, load_config
 from replay_buffer import ReplayBuffer
 import env_wrapper
@@ -25,44 +28,22 @@ from sub_models.functions_losses import symexp
 
 
 
-def process_visualize(img):
-    img = img.astype('uint8')
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    img = cv2.resize(img, (640, 640))
-    return img
-
-
-def build_single_env(env_name, image_size):
-    env = gymnasium.make(env_name, full_action_space=False, render_mode="rgb_array", frameskip=1)
-    env = env_wrapper.MaxLast2FrameSkipWrapper(env, skip=4)
-    env = gymnasium.wrappers.ResizeObservation(env, shape=image_size)
-    return env
-
-
-def build_vec_env(env_name, image_size, num_envs):
-    # lambda pitfall refs to: https://python.plainenglish.io/python-pitfalls-with-variable-capture-dcfc113f39b7
-    def lambda_generator(env_name, image_size):
-        return lambda: build_single_env(env_name, image_size)
-    env_fns = []
-    env_fns = [lambda_generator(env_name, image_size) for i in range(num_envs)]
-    vec_env = gymnasium.vector.AsyncVectorEnv(env_fns=env_fns)
-    return vec_env
-
-
-def eval_episodes(num_episode, env_name, max_steps, num_envs, image_size,
-                  world_model, agent: agents.ActorCriticAgent):
+def eval_episodes(num_episode, suite, env_name, seed, 
+                  world_model, agent: agents.ActorCriticAgent, 
+                  num_envs=1):
     world_model.eval()
     agent.eval()
-    vec_env = build_vec_env(env_name, image_size, num_envs=num_envs)
+    vec_env, env_config, _ = train_metaworld.make_env(suite, env_name, seed=seed)
+
     # print("Current env: " + colorama.Fore.YELLOW + f"{env_name}" + colorama.Style.RESET_ALL)
     print("Current env: " + f"{env_name}")
     sum_reward = np.zeros(num_envs)
-    current_obs, current_info = vec_env.reset()
+    current_obs = vec_env.reset()
     context_obs = deque(maxlen=16)
     context_action = deque(maxlen=16)
 
     final_rewards = []
-    # for total_steps in tqdm(range(max_steps//num_envs)):
+    final_dones = []
     while True:
         # sample part >>>
         with torch.no_grad():
@@ -70,38 +51,51 @@ def eval_episodes(num_episode, env_name, max_steps, num_envs, image_size,
                 action = vec_env.action_space.sample()
             else:
                 context_latent = world_model.encode_obs(torch.cat(list(context_obs), dim=1))
-                model_context_action = np.stack(list(context_action), axis=1)
-                model_context_action = torch.Tensor(model_context_action).cuda()
+                model_context_action = np.stack(list(context_action), axis=0)
+                model_context_action = torch.Tensor(model_context_action).cuda().unsqueeze(0)
                 prior_flattened_sample, last_dist_feat = world_model.calc_last_dist_feat(context_latent, model_context_action)
                 action = agent.sample_as_env_action(
                     torch.cat([prior_flattened_sample, last_dist_feat], dim=-1),
                     greedy=False
                 )
-                # action = agent.sample_td_action(context_latent, model_context_action, world_model)
 
-        context_obs.append(rearrange(torch.Tensor(current_obs).cuda(), "B H W C -> B 1 C H W")/255)
+            if suite == 'atari':
+                context_obs.append(rearrange(torch.Tensor(current_obs).cuda(), "B H W C -> B 1 C H W")/255)
+            elif suite == 'metaworld':
+                context_obs.append(rearrange(torch.Tensor(current_obs.copy()).cuda(), "H W C -> 1 1 C H W")/255)
         context_action.append(action)
 
         obs, reward, done, truncated, info = vec_env.step(action)
-        # cv2.imshow("current_obs", process_visualize(obs[0]))
-        # cv2.waitKey(10)
 
         done_flag = np.logical_or(done, truncated)
         if done_flag.any():
+            sum_reward += reward
             for i in range(num_envs):
-                if done_flag[i]:
-                    final_rewards.append(sum_reward[i])
-                    sum_reward[i] = 0
+                if done_flag:
+                    final_rewards.append(sum_reward)
+                    final_dones.append(np.float16(done))
+                    current_obs = vec_env.reset()
+                    sum_reward = np.zeros(num_envs)
+                    
                     if len(final_rewards) == num_episode:
-                        print("Mean reward: " + f"{np.mean(final_rewards)}")
-                        # print("Mean reward: " + colorama.Fore.YELLOW + f"{np.mean(final_rewards)}" + colorama.Style.RESET_ALL)
+                        success = np.mean(final_dones)
+                        print("Mean reward: " + f"{np.mean(final_rewards)}" +
+                              " | Success rate: " + f"{success}")
                         return np.mean(final_rewards)
 
         # update current_obs, current_info and sum_reward
-        sum_reward += reward
-        current_obs = obs
-        current_info = info
+        else:
+            sum_reward += reward
+            current_obs = obs.copy()
+            current_info = info
         # <<< sample part
+
+class Config:
+    def __init__(self, dictionary):
+        for key, value in dictionary.items():
+            if isinstance(value, dict):
+                value = Config(value)
+            setattr(self, key, value)
 
 
 if __name__ == "__main__":
@@ -113,18 +107,23 @@ if __name__ == "__main__":
 
     # parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("-config_path", type=str, default='config_files/STORM_Mamba9.yaml', required=False)
-    parser.add_argument("-env_name", type=str, default='ALE/Gopher-v5', required=False)
-    parser.add_argument("-game", type=str, default='Gopher', required=False)
-    parser.add_argument("-seed", type=int, default=4, required=False)
-    parser.add_argument("-run_name", type=str, default='dubug_test', required=False)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-suite", type=str, default='metaworld', required=False)
+    parser.add_argument("-env_name", type=str, default='door-close', required=False)
+    parser.add_argument("-seed", type=int, default=1, required=False)
+    parser.add_argument("-base_model", type=str, default='Mamba', required=False)
+    parser.add_argument("-version", type=str, default='1_2_1', required=False)
+    parser.add_argument("-config_path", type=str, default='config_files/Mamba.yaml', required=False)
+
     parser.add_argument("-cuda_device", type=int, default=0, required=False)
-    parser.add_argument("-num", type=int, default=53454, required=False)
-    parser.add_argument("-base_model", type=str, default='Mamba9', required=False)
     parser.add_argument("-sample", type=str, default='normal', required=False)
-    parser.add_argument("-ckpt_path", type=str, default='/home/anyone/mamba2world-model/MSTORM/experiment_data/ckpt/Gopher_seed4_Mamba9_53454', required=False)
+
+    parser.add_argument("-data_path", type=str, default='/home/hq/LSTW/GLAM/data', required=False)
     args = parser.parse_args()
-    conf = load_config(args.config_path)
+    
+    with open(args.config_path, 'r') as file:
+        conf = yaml.safe_load(file)
+        conf = Config(conf)
     # print(colorama.Fore.RED + str(args) + colorama.Style.RESET_ALL)
     print(str(args))
 
@@ -134,12 +133,11 @@ if __name__ == "__main__":
     device = torch.device(f"cuda:{args.cuda_device}" if torch.cuda.is_available() else "cpu")
 
     # build and load model/agent
-    import train2
-    dummy_env = build_single_env(args.env_name, conf.BasicSettings.ImageSize)
-    action_dim = dummy_env.action_space.n
-    world_model = train2.build_world_model(conf, args, action_dim, device)
-    agent = train2.build_agent(conf, action_dim, device)
-    root_path = args.ckpt_path 
+    dummy_env, env_conf, action_dim = train_metaworld.make_env(args.suite ,args.env_name, seed=0)
+
+    world_model = train_metaworld.build_world_model(conf, env_conf, args, action_dim, device)
+    agent = train_metaworld.build_agent(conf, action_dim, device)
+    root_path = f'{args.data_path}/ckpt/{args.env_name}_seed{args.seed}_{args.base_model}_{args.version}'
 
     import glob 
     pathes = glob.glob(f"{root_path}/world_model_*.pth")
@@ -152,20 +150,26 @@ if __name__ == "__main__":
         world_model.load_state_dict(torch.load(f"{root_path}/world_model_{step}.pth", map_location=torch.device('cuda:0')))
         agent.load_state_dict(torch.load(f"{root_path}/agent_{step}.pth", map_location=torch.device('cuda:0')))
         # # eval
-        episode_avg_return = eval_episodes(
-            num_episode=20,
-            env_name=args.env_name,
-            num_envs=5,
-            max_steps=conf.JointTrainAgent.SampleMaxSteps,
-            image_size=conf.BasicSettings.ImageSize,
-            world_model=world_model,
-            agent=agent
-        )
+        episode_returns = []
+        for i in range(5):
+            seed = np.random.randint(0, 100)
+            episode_return = eval_episodes(
+                num_episode=2,
+                suite=args.suite,
+                env_name=args.env_name,
+                seed=seed,
+                world_model=world_model,
+                agent=agent,
+                num_envs=1
+            )
+            episode_returns.append(episode_return)
+
+        episode_avg_return = np.mean(episode_returns)
         results.append([step, episode_avg_return])
-    os.makedirs(f"eval_result/{args.game}", exist_ok=True)
-    with open(f"eval_result/{args.game}/{args.run_name}_{args.num}.csv", mode="w") as fout:
+    os.makedirs(f"eval_result/{args.suite}", exist_ok=True)
+    with open(f"eval_result/{args.suite}/{args.env_name}_{args.version}.csv", mode="w") as fout:
         fout.write("step, episode_avg_return\n")
         for step, episode_avg_return in results:
             fout.write(f"{step},{episode_avg_return}\n")
 
-        print(f'save to eval_result/{args.game}/{args.run_name}_{args.num}.csv')
+        print(f'save to eval_result/{args.suite}/{args.env_name}_{args.version}.csv')

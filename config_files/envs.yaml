@@ -11,7 +11,7 @@ atari:
 
 metaworld:
 
-  image_size: [64, 64]  # /home/hq/anaconda3/envs/env_name/lib/python3.8/site-packages/gymnasium/envs/mujoco/mujoco_env.py 20
+  image_size: [128, 128]  # /home/hq/anaconda3/envs/glam/lib/python3.10/site-packages/gymnasium/envs/mujoco/mujoco_env.py 20
   camera: 'corner'   # /home/hq/CoWorld/Metaworld/metaworld/envs/mujoco/env_dict.py 192
   action_repeat: 2
   time_limit: 1000
