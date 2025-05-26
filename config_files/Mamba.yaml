@@ -1,7 +1,7 @@
 Task: "JointTrainAgent"
 
 BasicSettings:
-  ReplayBufferOnGPU: True
+  ReplayBufferOn: 'gpu'
 
 JointTrainAgent:
   SampleMaxSteps: 102000
@@ -11,7 +11,7 @@ JointTrainAgent:
   BatchSize: 64
   DemonstrationBatchSize: 4
   BatchLength: 64
-  ImagineBatchSize: 512
+  ImagineBatchSize: 1024
   ImagineDemonstrationBatchSize: 256
   ImagineContextLength: 8
   ImagineBatchLength: 16

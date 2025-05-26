@@ -6,12 +6,36 @@ from einops import rearrange
 import copy
 import pickle
 import torch.nn.functional as F
+import os
 
 class ReplayBuffer():
-    def __init__(self, obs_shape, action_dim, num_envs, max_length=int(1E6), warmup_length=50000, store_on_gpu=False, device=None) -> None:
-        self.store_on_gpu = store_on_gpu
+    def __init__(self, obs_shape, action_dim, num_envs, max_length=int(1E6), warmup_length=50000, store_on='gpu', device=None) -> None:
+        self.store_on = store_on
         self.device = device
-        if store_on_gpu:
+        if store_on == 'disk':
+        # 自动设置存储目录
+            self.directory = os.path.join(os.getcwd(), "replay_buffer")
+            os.makedirs(self.directory, exist_ok=True)
+
+            # 初始化文件路径
+            self.obs_file = os.path.join(self.directory, "obs_buffer.npy")
+            self.action_file = os.path.join(self.directory, "action_buffer.npy")
+            self.reward_file = os.path.join(self.directory, "reward_buffer.npy")
+            self.termination_file = os.path.join(self.directory, "termination_buffer.npy")
+            self.metadata_file = os.path.join(self.directory, "metadata.pkl")
+
+            # 如果文件存在，删除旧文件
+            for file_path in [self.obs_file, self.action_file, self.reward_file, self.termination_file, self.metadata_file]:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+
+            np.save(self.obs_file, np.empty((max_length, num_envs, *obs_shape), dtype=np.uint8))
+            np.save(self.action_file, np.empty((max_length, num_envs, action_dim), dtype=np.float32))
+            np.save(self.reward_file, np.empty((max_length, num_envs), dtype=np.float32))
+            np.save(self.termination_file, np.empty((max_length, num_envs), dtype=np.float32))
+            self._save_metadata({"length": 0, "last_pointer": -1})
+
+        elif store_on == 'gpu':
             self.obs_buffer = torch.empty((max_length//num_envs, num_envs, *obs_shape), dtype=torch.uint8, device=self.device, requires_grad=False)
             self.action_buffer = torch.empty((max_length//num_envs, num_envs, action_dim), dtype=torch.float32, device=self.device, requires_grad=False)
             self.reward_buffer = torch.empty((max_length//num_envs, num_envs), dtype=torch.float32, device=self.device, requires_grad=False)
@@ -53,10 +77,47 @@ class ReplayBuffer():
 
     def ready(self):
         return self.length * self.num_envs > self.warmup_length
+    
+    def _save_metadata(self, metadata):
+        with open(self.metadata_file, "wb") as f:
+            pickle.dump(metadata, f)
 
+    def _load_metadata(self):
+        with open(self.metadata_file, "rb") as f:
+            return pickle.load(f)
+        
     @torch.no_grad()
     def sample(self, batch_size, external_batch_size, batch_length):
-        if self.store_on_gpu:
+        if self.store_on == 'disk':
+            metadata = self._load_metadata()
+            length = metadata["length"]
+
+            if length < batch_length:
+                raise ValueError("Not enough data to sample.")
+
+            # 随机采样起始索引
+            indexes = np.random.randint(0, length + 1 - batch_length, size=batch_size)
+
+            # 加载现有数据
+            obs_buffer = np.load(self.obs_file, mmap_mode="r")
+            action_buffer = np.load(self.action_file, mmap_mode="r")
+            reward_buffer = np.load(self.reward_file, mmap_mode="r")
+            termination_buffer = np.load(self.termination_file, mmap_mode="r")
+
+            # 采样数据
+            obs = np.stack([obs_buffer[idx:idx + batch_length] for idx in indexes])
+            action = np.stack([action_buffer[idx:idx + batch_length] for idx in indexes])
+            reward = np.stack([reward_buffer[idx:idx + batch_length] for idx in indexes])
+            termination = np.stack([termination_buffer[idx:idx + batch_length] for idx in indexes])
+
+            obs = torch.from_numpy(obs).float().cuda().squeeze(2)/ 255
+            obs = rearrange(obs, "B T H W C -> B T C H W")
+            action = torch.from_numpy(action).cuda().squeeze(2)
+            reward = torch.from_numpy(reward).cuda().squeeze(2)
+            termination = torch.from_numpy(termination).cuda().squeeze(2)
+
+            return obs, action, reward, termination
+        elif self.store_on == 'gpu':
             obs, action, reward, termination = [], [], [], []
             if batch_size > 0:
                 for i in range(self.num_envs):
@@ -85,6 +146,8 @@ class ReplayBuffer():
             action = torch.cat(action, dim=0)
             reward = torch.cat(reward, dim=0)
             termination = torch.cat(termination, dim=0)
+
+            return obs, action, reward, termination
         else:
             obs, action, reward, termination = [], [], [], []
             if batch_size > 0:
@@ -109,13 +172,34 @@ class ReplayBuffer():
             reward = torch.from_numpy(np.concatenate(reward, axis=0)).cuda()
             termination = torch.from_numpy(np.concatenate(termination, axis=0)).cuda()
 
-        return obs, action, reward, termination
+            return obs, action, reward, termination
 
     def append(self, obs, action, reward, termination):
         # obs/nex_obs: torch Tensor
         # action/reward/termination: int or float or bool
         self.last_pointer = (self.last_pointer + 1) % (self.max_length//self.num_envs)
-        if self.store_on_gpu:
+        if self.store_on == 'disk':
+            metadata = self._load_metadata()
+            length = metadata["length"]
+            last_pointer = (metadata["last_pointer"] + 1) % self.max_length
+
+            # 加载现有数据
+            obs_buffer = np.load(self.obs_file, mmap_mode="r+")
+            action_buffer = np.load(self.action_file, mmap_mode="r+")
+            reward_buffer = np.load(self.reward_file, mmap_mode="r+")
+            termination_buffer = np.load(self.termination_file, mmap_mode="r+")
+
+            # 写入新数据
+            obs_buffer[last_pointer] = obs
+            action_buffer[last_pointer] = action
+            reward_buffer[last_pointer] = reward
+            termination_buffer[last_pointer] = termination
+
+            # 更新元数据
+            metadata["last_pointer"] = last_pointer
+            metadata["length"] = min(length + 1, self.max_length)
+            self._save_metadata(metadata)    
+        elif self.store_on == 'gpu':
             self.obs_buffer[self.last_pointer] = torch.from_numpy(obs.copy())
             self.action_buffer[self.last_pointer] = torch.from_numpy(action)
             self.reward_buffer[self.last_pointer] = torch.from_numpy(reward)

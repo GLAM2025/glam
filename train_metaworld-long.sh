@@ -3,11 +3,11 @@
 seeds=(6)
 game_list=(
     'door-close'
-    'button-press'
-    'window-close'
-    'handle-press'
-    'drawer-close'
-    'button-press-topdown'
+    # 'button-press'
+    # 'window-close'
+    # 'handle-press'
+    # 'drawer-close'
+    # 'button-press-topdown'
     )
     
     
@@ -16,7 +16,7 @@ do
     for seed in "${seeds[@]}";
     do
         base_model=Mamba
-        model_version=1_2_3
+        model_version=1_2_4
         cuda_device=0
         sample=normal
         suite=metaworld

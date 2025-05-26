@@ -156,6 +156,7 @@ def joint_train_world_model_agent(suite, env_name, max_steps,
                         torch.cat([prior_flattened_sample, last_dist_feat], dim=-1),
                         greedy=False
                     )
+                    # action = vec_env.action_space.sample()  # just test
             if suite == 'atari':
                 context_obs.append(rearrange(torch.Tensor(current_obs).cuda(), "B H W C -> B 1 C H W")/255)
             elif suite == 'metaworld':
@@ -301,7 +302,7 @@ def build_replay_buffer(conf, env_conf, action_dim):
             num_envs=conf.JointTrainAgent.NumEnvs,
             max_length=conf.JointTrainAgent.BufferMaxLength,
             warmup_length=conf.JointTrainAgent.BufferWarmUp,
-            store_on_gpu=conf.BasicSettings.ReplayBufferOnGPU,
+            store_on=conf.BasicSettings.ReplayBufferOn,
             device=device
         )
     elif args.sample == 'time_balance':
