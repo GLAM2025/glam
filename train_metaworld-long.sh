@@ -2,12 +2,12 @@
 
 seeds=(6)
 game_list=(
-    'door-close'
+    # 'door-close'
     # 'button-press'
     # 'window-close'
     # 'handle-press'
     # 'drawer-close'
-    # 'button-press-topdown'
+    'button-press-topdown'
     )
     
     
@@ -15,8 +15,8 @@ for env_name in "${game_list[@]}";
 do
     for seed in "${seeds[@]}";
     do
-        base_model=Mamba
-        model_version=1_2_4
+        base_model=Mamba-mask
+        model_version=1_2_4_1
         cuda_device=0
         sample=normal
         suite=metaworld

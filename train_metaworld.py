@@ -254,6 +254,17 @@ def build_world_model(conf, env_conf, args,action_dim, device):
             transformer_num_layers=conf.Models.WorldModel.TransformerNumLayers,
             device = device 
         ).cuda(device)
+    elif args.base_model == "Mamba-mask":
+        from sub_models.mamba_mask_wm3 import WorldModel 
+        return WorldModel(
+            img_width = env_conf.image_size[0],
+            in_channels=conf.Models.WorldModel.InChannels,
+            action_dim=action_dim,
+            transformer_max_length=conf.Models.WorldModel.TransformerMaxLength,
+            transformer_hidden_dim=conf.Models.WorldModel.TransformerHiddenDim,
+            transformer_num_layers=conf.Models.WorldModel.TransformerNumLayers,
+            device = device 
+        ).cuda(device)
     elif args.base_model == "Glam":
         from sub_models.mamba_wm12 import WorldModel
         return WorldModel(
@@ -355,7 +366,7 @@ if __name__ == "__main__":
     parser.add_argument("-suite", type=str, default='metaworld', required=False)
     parser.add_argument("-env_name", type=str, default='door-close', required=False)
     parser.add_argument("-seed", type=int, default=1, required=False)
-    parser.add_argument("-base_model", type=str, default='Mamba', required=False)
+    parser.add_argument("-base_model", type=str, default='Mamba-mask', required=False)
     parser.add_argument("-version", type=str, default='1_1', required=False)
     parser.add_argument("-config_path", type=str, default='config_files/Mamba.yaml', required=False)
 
