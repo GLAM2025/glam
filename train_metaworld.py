@@ -170,18 +170,18 @@ def joint_train_world_model_agent(suite, env_name, max_steps,
         obs, reward, done, truncated, info = vec_env.step(action)
         replay_buffer.append(current_obs, action, reward, np.array(done))
 
-        visualize = True
-        if visualize:
-            save_path = "/home/hq/LSTW/GLAM/visual_image"  # 替换为您希望保存图像的路径
-            os.makedirs(save_path, exist_ok=True)  # 如果路径不存在，则创建
+        # visualize = True
+        # if visualize:
+        #     save_path = "/home/hq/LSTW/GLAM/visual_image"  # 替换为您希望保存图像的路径
+        #     os.makedirs(save_path, exist_ok=True)  # 如果路径不存在，则创建
 
-            if suite == 'atari':
-                image = obs
-                cv2.imwrite(os.path.join(save_path, f"frame_{total_steps}.jpg"), image)  # 保存图像为jpg文件
-            elif suite == 'metaworld':
-                image = obs.copy()
-                image = image[..., ::-1]    # RGB->BGR
-                cv2.imwrite(os.path.join(save_path, f"frame_{total_steps}.jpg"), image)  # 保存图像为jpg文件
+        #     if suite == 'atari':
+        #         image = obs
+        #         cv2.imwrite(os.path.join(save_path, f"frame_{total_steps}.jpg"), image)  # 保存图像为jpg文件
+        #     elif suite == 'metaworld':
+        #         image = obs.copy()
+        #         image = image[..., ::-1]    # RGB->BGR
+        #         cv2.imwrite(os.path.join(save_path, f"frame_{total_steps}.jpg"), image)  # 保存图像为jpg文件
 
 
         done_flag = np.logical_or(done, truncated)

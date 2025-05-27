@@ -13,7 +13,7 @@ from sub_models.attention_blocks import PositionalEncoding1D, AttentionBlock, At
 
 from mamba_ssm import Mamba
 try:
-    from mamba_ssm.ops.triton.layernorm import RMSNorm, layer_norm_fn, rms_norm_fn
+    from mamba_ssm.ops.triton.layer_norm import RMSNorm, layer_norm_fn, rms_norm_fn
 except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
 

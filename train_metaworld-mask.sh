@@ -30,7 +30,7 @@ do
     for seed in "${seeds[@]}";
     do
         base_model=Mamba-mask
-        model_version=1_2_4_1
+        model_version=1_2_5
         cuda_device=0
         sample=normal
         suite=metaworld

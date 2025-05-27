@@ -8,7 +8,7 @@ from torch.cuda.amp import autocast
 
 from sub_models.functions_losses import SymLogTwoHotLoss
 from sub_models.attention_blocks import get_subsequent_mask_with_batch_length, get_subsequent_mask
-from sub_models.mamba_model3 import StochasticMamba
+from sub_models.mamba_mask_model3 import StochasticMamba
 from sub_models.transformer_model import StochasticTransformerKVCache
 import agents
 
