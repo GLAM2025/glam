@@ -74,6 +74,7 @@ def make_env(suite ,env_name, seed):
             config.camera,
             config.device
         )
+        # env = wrappers.CameraWrapper(env)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, config.time_limit)
         # env = wrappers.SelectAction(env, key='action')
@@ -168,6 +169,20 @@ def joint_train_world_model_agent(suite, env_name, max_steps,
 
         obs, reward, done, truncated, info = vec_env.step(action)
         replay_buffer.append(current_obs, action, reward, np.array(done))
+
+        visualize = True
+        if visualize:
+            save_path = "/home/hq/LSTW/GLAM/visual_image"  # 替换为您希望保存图像的路径
+            os.makedirs(save_path, exist_ok=True)  # 如果路径不存在，则创建
+
+            if suite == 'atari':
+                image = obs
+                cv2.imwrite(os.path.join(save_path, f"frame_{total_steps}.jpg"), image)  # 保存图像为jpg文件
+            elif suite == 'metaworld':
+                image = obs.copy()
+                image = image[..., ::-1]    # RGB->BGR
+                cv2.imwrite(os.path.join(save_path, f"frame_{total_steps}.jpg"), image)  # 保存图像为jpg文件
+
 
         done_flag = np.logical_or(done, truncated)
         if done_flag.any():
@@ -364,7 +379,7 @@ if __name__ == "__main__":
     # parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("-suite", type=str, default='metaworld', required=False)
-    parser.add_argument("-env_name", type=str, default='door-close', required=False)
+    parser.add_argument("-env_name", type=str, default='sweep-into', required=False)
     parser.add_argument("-seed", type=int, default=1, required=False)
     parser.add_argument("-base_model", type=str, default='Mamba-mask', required=False)
     parser.add_argument("-version", type=str, default='1_1', required=False)

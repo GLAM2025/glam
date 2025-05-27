@@ -406,6 +406,41 @@ class CollectDataset:
         else:
             raise NotImplementedError(value.dtype)
         return value.astype(dtype)
+    
+import gymnasium
+from gymnasium.core import Env
+from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
+    
+
+DEFAULT_CAMERA_CONFIG = {
+    "distance": 1.25,
+    "azimuth": 145,
+    "elevation": -25.0,
+    "lookat": np.array([0.0, 0.65, 0.0]),
+    }
+
+DEFAULT_SIZE=64
+    
+class CameraWrapper(gymnasium.Wrapper):
+    def __init__(self, env: Env):
+        super().__init__(env)
+
+        self.unwrapped.model.vis.global_.offwidth = DEFAULT_SIZE
+        self.unwrapped.model.vis.global_.offheight = DEFAULT_SIZE
+        self.unwrapped.mujoco_renderer = MujocoRenderer(env.model, env.data, DEFAULT_CAMERA_CONFIG, DEFAULT_SIZE, DEFAULT_SIZE)
+
+        # Hack: enable random reset
+        self.unwrapped._freeze_rand_vec = False
+
+    def reset(self):
+        obs, info = super().reset()
+        
+        return obs, info
+
+    def step(self, action):
+        next_obs, reward, done, truncate, info = self.env.step(action) 
+        
+        return next_obs, reward, done, truncate, info
 
 
 # MetaWorld wrapper
@@ -422,6 +457,7 @@ class MetaWorld:
         task = f"{name}-v2-goal-observable"
         env_cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[task]
         self._env = env_cls(seed=seed, render_mode='rgb_array')
+        # self._env = CameraWrapper(self._env)  # Wrap with camera rendering
         self._env._freeze_rand_vec = False
         self._size = size   # /home/hq/anaconda3/envs/env_name/lib/python3.8/site-packages/gymnasium/envs/mujoco/mujoco_env.py 20
         self._action_repeat = action_repeat
