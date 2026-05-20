@@ -40,7 +40,6 @@ def build_single_env(env_name, image_size):
 
 
 def build_vec_env(env_name, image_size, num_envs):
-    # lambda pitfall refs to: https://python.plainenglish.io/python-pitfalls-with-variable-capture-dcfc113f39b7
     def lambda_generator(env_name, image_size):
         return lambda: build_single_env(env_name, image_size)
     env_fns = []
@@ -113,16 +112,16 @@ if __name__ == "__main__":
 
     # parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("-config_path", type=str, default='config_files/STORM_Mamba9.yaml', required=False)
+    parser.add_argument("-config_path", type=str, default='config_files/GLAM.yaml', required=False)
     parser.add_argument("-env_name", type=str, default='ALE/Gopher-v5', required=False)
     parser.add_argument("-game", type=str, default='Gopher', required=False)
     parser.add_argument("-seed", type=int, default=4, required=False)
     parser.add_argument("-run_name", type=str, default='dubug_test', required=False)
     parser.add_argument("-cuda_device", type=int, default=0, required=False)
-    parser.add_argument("-num", type=int, default=53454, required=False)
-    parser.add_argument("-base_model", type=str, default='Mamba9', required=False)
+    parser.add_argument("-num", type=int, default=0, required=False)
+    parser.add_argument("-base_model", type=str, default='GLAM', required=False)
     parser.add_argument("-sample", type=str, default='normal', required=False)
-    parser.add_argument("-ckpt_path", type=str, default='/home/anyone/mamba2world-model/MSTORM/experiment_data/ckpt/Gopher_seed4_Mamba9_53454', required=False)
+    parser.add_argument("-ckpt_path", type=str, default='./', required=False)
     args = parser.parse_args()
     conf = load_config(args.config_path)
     # print(colorama.Fore.RED + str(args) + colorama.Style.RESET_ALL)
@@ -134,11 +133,11 @@ if __name__ == "__main__":
     device = torch.device(f"cuda:{args.cuda_device}" if torch.cuda.is_available() else "cpu")
 
     # build and load model/agent
-    import train2
+    import train
     dummy_env = build_single_env(args.env_name, conf.BasicSettings.ImageSize)
     action_dim = dummy_env.action_space.n
-    world_model = train2.build_world_model(conf, args, action_dim, device)
-    agent = train2.build_agent(conf, action_dim, device)
+    world_model = train.build_world_model(conf, args, action_dim, device)
+    agent = train.build_agent(conf, action_dim, device)
     root_path = args.ckpt_path 
 
     import glob 

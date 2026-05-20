@@ -41,9 +41,9 @@ class RMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x):
-        # 计算输入张量的均方根
+
         rms = torch.sqrt(torch.mean(x**2, dim=self.dim, keepdim=True) + self.eps)
-        # 使用 RMS 值对输入张量进行归一化
+
         normalized_x = x / rms
         return normalized_x
 

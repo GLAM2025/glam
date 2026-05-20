@@ -1,0 +1,29 @@
+# Core RL envs
+gymnasium
+gym
+ale-py
+
+# Numerics and utilities
+numpy
+scipy
+tqdm
+colorama
+PyYAML
+yacs
+cloudpickle
+
+# Vision and tensor utilities
+opencv-python
+pillow
+einops
+
+# Logging
+tensorboardX
+
+# Sequence model dependencies
+mamba-ssm
+# Some environments may additionally require this package.
+causal-conv1d
+
+# Atari ROM installer (run AutoROM --accept-license after install)
+autorom
